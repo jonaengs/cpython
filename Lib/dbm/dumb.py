@@ -165,10 +165,9 @@ class _Database(collections.abc.MutableMapping):
             f.write(val)
         return (pos, len(val))
 
-    # Write val to the data file, starting at offset pos.  The caller
-    # is responsible for ensuring that there's enough room starting at
-    # pos to hold val, without overwriting some other value.  Return
-    # pair (pos, len(val)).
+    # Write val to the data file, starting at offset pos.
+    # Return pair 
+    #     (pos, len(val)).
     def _setval(self, pos, val):
         with _io.open(self._datfile, 'rb+') as f:
             f.seek(pos)
@@ -176,7 +175,7 @@ class _Database(collections.abc.MutableMapping):
         return (pos, len(val))
 
     # key is a new key whose associated value starts in the data file
-    # at offset pos and with length siz.  Add an index record to
+    # at offset pos and with length size.  Add an index record to
     # the in-memory index dict, and append one to the directory file.
     def _addkey(self, key, pos_and_siz_pair):
         self._index[key] = pos_and_siz_pair
