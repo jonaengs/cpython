@@ -91,14 +91,14 @@ class _Database(collections.abc.MutableMapping):
 
     # Read directory file into the in-memory index dict.
     def _update(self, flag):
+        self._index_modified = False
         self._index = {}
-        self._new_keys = set() # Keys that must be written to disk on commit
         try:
             f = _io.open(self._dirfile, 'r', encoding="Latin-1")
         except OSError:
             if flag not in ('c', 'n'):
                 raise
-            self._modified = True
+            self._index_modified = True
         else:
             with f:
                 for line in f:
@@ -114,13 +114,9 @@ class _Database(collections.abc.MutableMapping):
         # CAUTION:  It's vital that _commit() succeed, and _commit() can
         # be called from __del__().  Therefore we must never reference a
         # global in this routine.
-        if self._index is None or not self._new_keys:
+        if self._index is None or not self._index_modified:
             return  # nothing to do
 
-
-        # OPTION 1: Keep current logic: rename idx to bak and write entire index
-        # TODO: If this option is chosen, then _new_keys can be replaced with a 
-        # boolean flag indicating that the index has been updated
         try:
             self._os.unlink(self._bakfile)
         except OSError:
@@ -138,20 +134,7 @@ class _Database(collections.abc.MutableMapping):
                 # position; UTF-8, though, does care sometimes.
                 entry = "%r, %r\n" % (key.decode('Latin-1'), pos_and_siz_pair)
                 f.write(entry)
-            self._new_keys.clear()
-
-
-        # OPTION 2: drop .bak, append to index
-        # Reduce I/O by leaving old keys in place and appending updates.
-        # with self._io.open(self._dirfile, 'a', encoding="Latin-1") as f:
-        #     self._chmod(self._dirfile)
-        #     data_to_write = [(key, self._index[key]) for key in self._new_keys]
-        #     for key, pos_and_siz_pair in data_to_write:
-        #         # Use Latin-1 since it has no qualms with any value in any
-        #         # position; UTF-8, though, does care sometimes.
-        #         entry = "%r, %r\n" % (key.decode('Latin-1'), pos_and_siz_pair)
-        #         f.write(entry)
-        #     self._new_keys.clear()
+            self._index_modified = False
 
     sync = _commit
 
@@ -193,7 +176,7 @@ class _Database(collections.abc.MutableMapping):
         return (pos, len(val))
 
     # key is a new key whose associated value starts in the data file
-    # at offset pos and with length size.  Add an index record to
+    # at offset pos and with length siz.  Add an index record to
     # the in-memory index dict, and append one to the directory file.
     def _addkey(self, key, pos_and_siz_pair):
         self._index[key] = pos_and_siz_pair
@@ -228,11 +211,10 @@ class _Database(collections.abc.MutableMapping):
                 # by the old value.  The blocks used by the old value are
                 # forever lost.
                 self._index[key] = self._addval(val)
-                # self._new_keys.remove(key)  # <-- Not sure if this is a good idea
 
             # We must update the index if the value's size changes
             if len(val) != siz:
-                self._new_keys.add(key)
+                self._index_modified = True
 
             # Note that _index may be out of synch with the directory
             # file now:  _setval() and _addval() don't update the directory
@@ -248,6 +230,7 @@ class _Database(collections.abc.MutableMapping):
         if isinstance(key, str):
             key = key.encode('utf-8')
         self._verify_open()
+        self._index_modified = True
         # The blocks used by the associated value are lost.
         del self._index[key]
         # XXX It's unclear why we do a _commit() here (the code always
